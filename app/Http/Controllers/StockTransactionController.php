@@ -76,7 +76,7 @@ class StockTransactionController extends Controller
 
 
          $Stockreason = StockTransaction::find($request->stock_id);
-       
+
          if ($Stockreason != null)
          {
              $Stockreason->reason = $request->input('reason');

@@ -18,11 +18,17 @@ class StockTransaction extends Model
     ];
 
      // Relationships
-     public function product()
-     {
-        //  return $this->belongsTo(Product::class, 'product_id','id');
-         return $this->belongsTo(Product::class)->withTrashed();
-     }
+    //  public function product()
+    //  {
+    //     //  return $this->belongsTo(Product::class, 'product_id','id');
+    //      return $this->belongsTo(Product::class)->withTrashed();
+    //  }
+
+
+      public function product()
+    {
+        return $this->belongsTo(Product::class);
+    }
 
      public function supplier()
      {
