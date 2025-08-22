@@ -105,7 +105,7 @@
                                         class="w-full px-4 py-4 text-black placeholder-black bg-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
                                 </div>
                                 <!-- <select
-                    required
+                    requireda
                     v-model="employee_id"
                     id="employee_id"
                     class="w-full px-4 py-4 text-black placeholder-black bg-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -309,22 +309,22 @@
 
                             <div v-if="selectedTable && selectedTable.id !== 'default' && selectedTable.order_type !== 'pickup'"
      class="flex items-center justify-between w-full px-8 pt-4 pb-4 border-b border-black">
-  
 
 
- <select
-        v-model="selectedTable.serviceCharge"
-        class="w-full py-3 text-xl font-bold tracking-wider text-black bg-white rounded-lg cursor-pointer"
-    >
-        <option value="">Select Service Charge</option>
-        <option
-            v-for="charge in serviceCharge"
-            :key="charge.id"
-            :value="parseFloat(charge.service_charge)"
-        >
-            {{ charge.service_charge }}%{{ charge.service_check === true || charge.service_check === 'true' ? ' (Default)' : '' }}
-        </option>
-    </select>
+<select
+  v-model="selectedTable.service_charge"
+  class="w-full py-3 text-xl font-bold tracking-wider text-black bg-white rounded-lg cursor-pointer"
+>
+  <option value="">Select Service Charge</option>
+  <option
+    v-for="charge in serviceCharge"
+    :key="charge.id"
+    :value="parseFloat(charge.service_charge)"
+  >
+    {{ charge.service_charge }}%
+  </option>
+</select>
+
 
 </div>
 
@@ -1445,7 +1445,24 @@ const handleScannerInput = (event) => {
 onMounted(() => {
     document.addEventListener("keypress", handleScannerInput);
     // console.log(props.products);
+
 });
+
+onMounted(() => {
+  if (props.serviceCharge && props.serviceCharge.length > 0) {
+    const defaultCharge = props.serviceCharge.find(
+      c => c.service_check === true || c.service_check === "true"
+    );
+    if (defaultCharge && !selectedTable.value.service_charge) {
+      selectedTable.value.service_charge = parseFloat(defaultCharge.service_charge);
+    }
+  }
+});
+
+
+
+
+
 
 const applyDiscount = (id) => {
     if (!selectedTable.value) {
