@@ -1,11 +1,13 @@
 <template>
   <Head title="POS" />
   <Banner />
+
   <div class="flex flex-col items-center justify-start min-h-screen py-8 space-y-4 bg-gray-100 px-36">
     <!-- Include the Header -->
     <Header />
 
     <div class="w-5/6 py-12 space-y-16">
+      <!-- Top header row -->
       <div class="flex items-center justify-between space-x-4">
         <div class="flex w-full space-x-4">
           <Link href="/">
@@ -24,6 +26,47 @@
           </p>
         </div>
       </div>
+
+      <!-- ✅ New Category Grid (opens Food Menu pre-filtered) -->
+    <!-- ✅ Smaller Category Grid -->
+<div class="w-full">
+  <div class="flex items-center justify-between mb-3">
+    <h3 class="text-2xl font-bold text-black">Categories</h3>
+    <button
+      type="button"
+      class="text-sm font-medium text-blue-600 hover:underline"
+      @click="() => { preselectedCategoryId = ''; isSelectModalOpen = true; }"
+    >
+      Open All Products
+    </button>
+  </div>
+
+  <div class="grid gap-3 grid-cols-4 sm:grid-cols-6 md:grid-cols-8">
+    <button
+      v-for="cat in topCategoryList"
+      :key="cat.id"
+      type="button"
+      @click="openCategory(cat.id)"
+      :title="cat.name"
+      class="aspect-square min-h-[96px] md:min-h-[110px] w-full
+             flex flex-col items-center justify-center text-center
+             bg-red-100 border border-blue-400/60 rounded-xl
+             hover:border-blue-600 hover:bg-blue-50 transition"
+    >
+      <p class="text-sm md:text-base font-semibold text-black line-clamp-2">
+        {{ cat.name }}
+      </p>
+      <p
+        v-if="cat.hierarchy_string"
+        class="mt-0.5 text-[11px] md:text-xs text-gray-500 line-clamp-1"
+      >
+        {{ cat.hierarchy_string }}
+      </p>
+    </button>
+  </div>
+</div>
+
+    
 
       <div class="flex w-full gap-4">
         <!-- Left: Tables + Customer -->
@@ -140,7 +183,7 @@
                   type="email"
                   inputmode="email"
                   autocomplete="email"
-                  pattern="^[^\s@]+@[^\s@]+\.[^\s@]+$"
+                  pattern="^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$"
                   placeholder="Enter Customer Email"
                   class="w-full px-4 py-4 text-black placeholder-black bg-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -197,10 +240,10 @@
                 }}
               </h2>
 
-              <span class="flex cursor-pointer" @click="isSelectModalOpen = true">
+              <!-- <span class="flex cursor-pointer" @click="isSelectModalOpen = true">
                 <p class="text-xl text-blue-600 font-bold">Food Menu</p>
                 <img src="/images/selectpsoduct.svg" class="w-6 h-6 ml-2" />
-              </span>
+              </span> -->
             </div>
 
             <div class="w-full px-12">
@@ -689,13 +732,18 @@
   />
   <AlertModel v-model:open="isAlertModalOpen" :message="message" />
 
-  <SelectProductModel
-    v-model:open="isSelectModalOpen"
-    :allcategories="allcategories"
-    :colors="colors"
-    :sizes="sizes"
-    @selected-products="handleSelectedProducts"
-  />
+  <!-- pass the NEW prop 'initial-category' -->
+<SelectProductModel
+  v-model:open="isSelectModalOpen"
+  :allcategories="allcategories"
+  :colors="colors"
+  :sizes="sizes"
+  :initial-category="preselectedCategoryId"  
+  :simple-mode="true"                      
+  @selected-products="handleSelectedProducts"
+/>
+
+
   <Footer />
 </template>
 
@@ -766,7 +814,7 @@ const getNextKotNumberForToday = () => {
     const fresh = { date: today, seq: 1 };
     saveKotSeqState(fresh);
     return 1;
-    }
+  }
   const next = (Number(state.seq) || 0) + 1;
   saveKotSeqState({ date: today, seq: next });
   return next;
@@ -795,6 +843,15 @@ const kitchen_note = ref("");
 const delivery_charge = ref("");
 const service_charge = ref("");
 const bank_service_charge = ref("");
+
+// ✅ NEW: category preselect for modal + grid data
+const preselectedCategoryId = ref("");
+const topCategoryList = computed(() => props.allcategories || []);
+const openCategory = (id) => {
+  preselectedCategoryId.value = String(id);
+  isSelectModalOpen.value = true;
+};
+
 const bankOptions = ref([
   "Alliance Finance Co PLC", "Amana Bank", "American Express Bank Ltd", "Asia Asset Finance PLC",
   "Bank of Ceylon", "Bank of China",
@@ -880,7 +937,7 @@ const seedFixedTables = () => {
     } else {
       stable.push({
         id: `t${n}`,
-        number: n,              // displays as n-1 => 1..25
+        number: n,             // displays as n-1 => 1..25
         orderId: generateOrderId(),
         products: [],
         cash: 0.0,
@@ -1614,10 +1671,7 @@ const sendKOT = (table) => {
       : "";
 
     const receiptHTML = `
-      <!doctype html>
-     
-      <!doctype html>
-<html>
+      <!doctype html>            <!doctype html> <html>
   <head>
     <meta charset="utf-8" />
     <title>KOT</title>
@@ -1761,8 +1815,7 @@ const sendKOT = (table) => {
     </table>
   </body>
 </html>
-
-    `;
+     `;
 
     const w = window.open("", "_blank");
     if (!w) {
@@ -1852,7 +1905,7 @@ const printBillOnly = () => {
     }).join("");
 
     const sub        = Number(subtotal.value || 0);
-    const discTotal  = Number(totalDiscount.value || 0);             // includes product + coupon + owner
+    const discTotal  = Number(totalDiscount.value || 0);            // includes product + coupon + owner
     const customDisc = Number(customDiscCalculated.value || 0);
     const deliv      = t.order_type === "pickup" ? Number(t.delivery_charge || 0) : 0;
 
