@@ -28,6 +28,8 @@ class Sale extends Model
         'order_type',
         'bank_name',
         'card_last4',
+        'owner_id',
+        'owner_discount_value',
     ];
 
 

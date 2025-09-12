@@ -61,12 +61,12 @@
               >
                 Print Receipt
               </p>
-              <p
+              <!-- <p
                 @click="handleKOTPrintReceipt"
                 class="cursor-pointer bg-orange-600 text-white font-bold uppercase tracking-wider px-4 shadow-xl   py-4 rounded-xl"
               >
                 KOT Receipt
-              </p>
+              </p> -->
 
 
               <p
@@ -142,6 +142,16 @@ const props = defineProps({
   service_charge : String,
   order_type : String,
   selectedPaymentMethod : String,
+
+
+   owner_discount_value: {
+    type: Number,
+    default: 0
+  },
+  owner_code: {
+    type: String,
+    default: null
+  }
 });
 
 const handlePrintReceipt = () => {
@@ -303,7 +313,9 @@ const handlePrintReceipt = () => {
   </head>
   <body>
       <div class="receipt-container">
-                <div class="header">
+
+           <div class="header "  style="text-align: center;">
+
 
            ${
              companyInfo?.value?.name
@@ -315,8 +327,7 @@ const handlePrintReceipt = () => {
     companyInfo?.value?.phone ||
     companyInfo?.value?.phone2 ||
     companyInfo?.value?.email
-      ? `<p>${companyInfo.value.phone || ""} | ${
-          companyInfo.value.phone2 || ""
+      ? `<p>${companyInfo.value.phone || ""} |  0704364943
         }  ${companyInfo.value.email || ""}</p>`
       : ""
   }
@@ -404,6 +415,17 @@ ${Number(props.subTotal) !== Number(props.total)
       <span>Discount</span>
       <span>(${(Number(props.totalDiscount) || 0).toFixed(2)}) LKR</span>
     </div>`}
+
+
+${Number(props.owner_discount_value) === 0
+  ? ""
+  : `<div>
+      <span>Owner Discount ${props.owner_code ? `(${props.owner_code})` : ""}</span>
+      <span>(${(Number(props.owner_discount_value) || 0).toFixed(2)}) LKR</span>
+    </div>`}
+
+
+
 
 
 

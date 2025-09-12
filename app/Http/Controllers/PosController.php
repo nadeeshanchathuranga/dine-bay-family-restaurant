@@ -1,10 +1,9 @@
 <?php
 
 namespace App\Http\Controllers;
-
+use App\Models\Owner;
+use App\Models\OwnerItem;
 use App\Models\Category;
-use App\Models\Delivery;
-use App\Models\ServiceCharge;
 use App\Models\Color;
 use App\Models\Coupon;
 use App\Models\Customer;
@@ -12,84 +11,104 @@ use App\Models\Product;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\Size;
+use App\Models\ServiceCharge;
 use App\Models\StockTransaction;
-use App\Models\BankServiceCharge;
 use App\Models\Employee;
-use App\Models\PromotionItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Carbon\Carbon;
 use Inertia\Inertia;
 
 class PosController extends Controller
 {
-    public function index(Request $request)
+
+     public function index(Request $request)
     {
+
+
         if (!Gate::allows('hasRole', ['Admin', 'Cashier'])) {
             abort(403, 'Unauthorized');
         }
 
+        // Your existing data…
         $allcategories = Category::with('parent')->get()->map(function ($category) {
-            $category->hierarchy_string = $category->hierarchy_string; // Access it
+            $category->hierarchy_string = $category->hierarchy_string;
             return $category;
         });
         $colors = Color::orderBy('created_at', 'desc')->get();
         $sizes = Size::orderBy('created_at', 'desc')->get();
-        $delivery = Delivery::orderBy('created_at', 'desc')->get();
-        // $serviceCharge = ServiceCharge::orderBy('created_at', 'desc')->get();
+        $serviceCharge = ServiceCharge::orderBy('created_at', 'desc')->get();
+
+
+
+
         $allemployee = Employee::orderBy('created_at', 'desc')->get();
-        // $bankCharge = BankServiceCharge::orderBy('created_at', 'desc')->get();
 
-     $bankCharge  = BankServiceCharge::orderBy('service_check', 'desc')
-            ->orderBy('created_at', 'asc')
-            ->get();
+        // NEW: Owners with current-month discount (or latest fallback)
+      $owners = Owner::with([
+        'thisMonthItem:id,owner_id,discount_value,current_discount,month',
+        'latestItem:id,owner_id,discount_value,current_discount,month'
+    ])
+    ->orderBy('name')
+    ->get()
+    ->map(function ($o) {
+        $item = $o->thisMonthItem ?? $o->latestItem;
+        return [
+            'id'               => $o->id,
+            'name'             => $o->name,
+            'code'             => $o->code,
+            'status'           => $o->status,
+            'discount_value'   => $item->discount_value ?? null,
+            'current_discount' => $item->current_discount ?? null,
 
-
-        $defaultCharge = $bankCharge->where('service_check', 'true')->first();
-
-
-        if (! $defaultCharge) {
-            $defaultCharge = $bankCharge->last();
-        }
-
-
-
-
-  $serviceCharge  = ServiceCharge::orderBy('service_check', 'desc')
-            ->orderBy('created_at', 'asc')
-            ->get();
-
-
-        $defaultServiceCharge = $serviceCharge->where('service_check', 'true')->first();
+        ];
+    });
 
 
-        if (! $defaultServiceCharge) {
-            $defaultServiceCharge = $serviceCharge->last();
-        }
-
-
-
-
-
-
-
-
-
-        // Render the page for GET requests
         return Inertia::render('Pos/Index', [
-            'product' => null,
-            'error' => null,
-            'loggedInUser' => Auth::user(),
+            'product'       => null,
+            'error'         => null,
+            'loggedInUser'  => Auth::user(),
             'allcategories' => $allcategories,
-            'allemployee' => $allemployee,
-            'colors' => $colors,
-            'delivery' => $delivery,
+            'allemployee'   => $allemployee,
+            'colors'        => $colors,
+            'sizes'         => $sizes,
+            'owners'        => $owners,
             'serviceCharge' => $serviceCharge,
-            'bankCharge' => $bankCharge,
-            'defaultCharge' => $defaultCharge,
-            'defaultServiceCharge' => $defaultServiceCharge,
-            'sizes' => $sizes,
+        ]);
+    }
+
+    // AJAX: fetch current discount for selected owner (prefer this month; else latest)
+    public function getOwnerDiscount(Request $request)
+    {
+        $request->validate([
+            'owner_id' => ['required','exists:owners,id'],
+        ]);
+
+        $owner = Owner::with(['thisMonthItem', 'latestItem'])->findOrFail($request->owner_id);
+
+        $item = $owner->thisMonthItem ?? $owner->latestItem;
+
+        if (!$item) {
+            return response()->json([
+                'owner_id'         => $owner->id,
+                'discount_value'   => 0,
+                'current_discount' => 0,
+                'month'            => now()->startOfMonth()->format('Y-m'),
+                'available'        => false,
+                'message'          => 'No discount found for this owner.',
+            ]);
+        }
+
+        return response()->json([
+            'owner_id'         => $owner->id,
+            'discount_value'   => (float) $item->discount_value, // fixed LKR
+            'current_discount'   => (float) $item->current_discount, // fixed LKR
+
+            'month'            => $item->month->format('Y-m'),
+            'available'        => true,
         ]);
     }
 
@@ -155,14 +174,24 @@ class PosController extends Controller
             return $carry + ($product['quantity'] * $product['cost_price']);
         }, 0);
 
-        $totalDiscount = collect($products)->reduce(function ($carry, $product) {
+        $productDiscounts = collect($products)->reduce(function ($carry, $product) {
             if (isset($product['discount']) && $product['discount'] > 0 && isset($product['apply_discount']) && $product['apply_discount'] != false) {
-                // Calculate the discount amount per product
                 $discountAmount = ($product['selling_price'] - $product['discounted_price']) * $product['quantity'];
                 return $carry + $discountAmount;
             }
             return $carry;
         }, 0);
+
+        // Get coupon discount if applied
+        $couponDiscount = isset($request->input('appliedCoupon')['discount']) ?
+            floatval($request->input('appliedCoupon')['discount']) : 0;
+
+
+    $ownerId   = $request->input('owner_id');
+    $ownerDisc = (float) $request->input('owner_discount_value', 0);
+
+        // Calculate total combined discount
+        $totalDiscount = $productDiscounts + $couponDiscount ;
 
         DB::beginTransaction(); // Start a transaction
 
@@ -189,7 +218,6 @@ class PosController extends Controller
                         'name' => $request->input('customer.name'),
                         'email' => $email,
                         'phone' => $phone,
-                        'bdate' => $request->input('customer.bdate'),
                         'address' => $request->input('customer.address', ''), // Optional address
                         'member_since' => now()->toDateString(), // Current date
                         'loyalty_points' => 0, // Default value
@@ -210,13 +238,9 @@ class PosController extends Controller
                 'sale_date' => now()->toDateString(), // Current date
                 'cash' => $request->input('cash'),
                 'custom_discount' => $request->input('custom_discount'),
-                'delivery_charge' => $request->input('delivery_charge'),
-                'service_charge' => $request->input('service_charge'),
-             'bank_service_charge' => $request->input('bank_service_charge') ?? 0,
-                'kitchen_note' => $request->input('kitchen_note'),
-                'order_type' => $request->input('order_type'),
-                'bank_name' => $request->bank_name,
-                'card_last4' => $request->card_last4,
+                 'owner_id'   => $request->input('owner_id') ?: null,
+                 'owner_discount_value' => $request->input('owner_discount_value') ?: 0,
+
             ]);
 
             foreach ($products as $product) {
@@ -235,6 +259,14 @@ class PosController extends Controller
                         ], 423);
                     }
 
+                    if ($productModel->expire_date && now()->greaterThan($productModel->expire_date)) {
+                        // Rollback transaction and return error
+                        DB::rollBack();
+                        return response()->json([
+                            'message' => "The product '{$productModel->name}' has expired (Expiration Date: {$productModel->expire_date->format('Y-m-d')}).",
+                        ], 423); // HTTP 422 Unprocessable Entity
+                    }
+
                     // Create sale item
                     SaleItem::create([
                         'sale_id' => $sale->id,
@@ -244,36 +276,6 @@ class PosController extends Controller
                         'total_price' => $product['quantity'] * $product['selling_price'],
                     ]);
 
-
-
-                    if($productModel->is_promotion){
-                        $promotionItems = PromotionItem::where('promotion_id', $productModel->id)->get();
-                        foreach($promotionItems as $promotionItem){
-                            $promoProduct = Product::find($promotionItem->product_id);
-
-                            $newITemStockQuantity = $promoProduct->stock_quantity - ($product['quantity'] * $promotionItem->quantity);
-                            if ($newITemStockQuantity < 0) {
-                                DB::rollBack();
-                                return response()->json([
-                                    'message' => "Insufficient stock for product: {$productModel->name}
-                                    ({$productModel->stock_quantity} available) (Product inside Promotion)",
-                                ], 423);
-                            }
-
-                            StockTransaction::create([
-                                'product_id' => $promoProduct->id,
-                                'transaction_type' => 'Sold',
-                                'quantity' => $product['quantity'] * $promotionItem->quantity,
-                                'transaction_date' => now(),
-                                'supplier_id' => $productModel->supplier_id ?? null,
-                            ]);
-
-                            $promoProduct->update([
-                                'stock_quantity' => $newITemStockQuantity,
-                            ]);
-                        }
-                    }
-
                     StockTransaction::create([
                         'product_id' => $product['id'],
                         'transaction_type' => 'Sold',
@@ -281,12 +283,31 @@ class PosController extends Controller
                         'transaction_date' => now(),
                         'supplier_id' => $productModel->supplier_id ?? null,
                     ]);
+
                     // Update stock quantity
                     $productModel->update([
                         'stock_quantity' => $newStockQuantity,
                     ]);
                 }
             }
+
+ if ($ownerId && $ownerDisc > 0) {
+            // Try to get the row and lock it; if not found, create it initialized to 0 then increment.
+            $ownerItem = OwnerItem::where('owner_id', $ownerId)->lockForUpdate()->first();
+
+            if ($ownerItem) {
+                // use Eloquent's increment for atomicity
+                $ownerItem->increment('current_discount', $ownerDisc);
+            } else {
+                OwnerItem::create([
+                    'owner_id'         => $ownerId,
+                    'discount_value'   => 0,               // keep as-is or set from your business rule
+                    'current_discount' => $ownerDisc,      // first increment
+                    'status'           => 'active',               // or whatever default you use
+                ]);
+            }
+        }
+
 
             // Commit the transaction
             DB::commit();

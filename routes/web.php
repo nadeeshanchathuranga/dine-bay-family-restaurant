@@ -13,6 +13,7 @@ use App\Http\Controllers\CouponController;
 use App\Http\Controllers\SizeController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\DeliveryController;
+use App\Http\Controllers\OwnerController;
 use App\Http\Controllers\ServiceChargeController;
 use App\Http\Controllers\TransactionHistoryController;
 use App\Http\Controllers\StockTransactionController;
@@ -20,6 +21,8 @@ use App\Http\Controllers\BankServiceChargeController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+use Carbon\Carbon;
+
 use Illuminate\Support\Facades\Gate;
 
 /*
@@ -70,11 +73,12 @@ Route::middleware([
     Route::post('products-variant', [ProductController::class, 'productVariantStore'])->name('productVariant');
     // Route::resource('company-info', CompanyInfoController::class)->name('companyInfo.index');
     Route::get('/company-info', [CompanyInfoController::class, 'index'])->name('companyInfo.index');
-    Route::post('/company-info/{companyInfo}', [CompanyInfoController::class, 'update'])->name('companyInfo.update');
+    Route::put('/company-info/{companyInfo}', [CompanyInfoController::class, 'update'])->name('companyInfo.update');
 
 
     Route::get('/pos', [PosController::class, 'index'])->name('pos.index');
     Route::post('/pos', [PosController::class, 'getProduct'])->name('pos.getProduct');
+    Route::post('/pos/get-owner-discount', [PosController::class, 'getOwnerDiscount'])->name('pos.getOwnerDiscount');
     Route::post('/get-coupon', [PosController::class, 'getCoupon'])->name('pos.getCoupon');
     Route::post('/pos/submit', [PosController::class, 'submit'])->name('pos.checkout');
     Route::resource('payment', PaymentController::class);
@@ -82,6 +86,15 @@ Route::middleware([
     Route::resource('customers', CustomerController::class);
     Route::resource('colors', ColorController::class);
     Route::resource('coupons', CouponController::class);
+    Route::resource('owners', OwnerController::class);
+
+    Route::post('/owners/import', [OwnerController::class, 'import'])->name('owners.import'); // optional
+
+Route::get('/test-owners', function () {
+    Carbon::setTestNow(Carbon::create(2025, 9, 1, 10)); // pretend it's Sep 1, 2025
+    return app(\App\Http\Controllers\OwnerController::class)->index();
+});
+
     Route::resource('sizes', SizeController::class);
     Route::resource('employees', EmployeeController::class);
     Route::resource('stock-transition', StockTransactionController::class);

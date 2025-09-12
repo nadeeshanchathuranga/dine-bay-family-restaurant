@@ -196,7 +196,7 @@
       </Link>
 
 
-      <Link href="/coupons" v-if="HasRole(['Admin'])">
+      <Link href="/owners" v-if="HasRole(['Admin'])">
         <div class="dashboard-card bg-[#FF1744]">
           <div class="card-content">
             <div class="icon-container">
@@ -207,9 +207,9 @@
               />
             </div>
             <div class="text-container">
-              <p class="title">Coupons</p>
+              <p class="title">Owner Discount</p>
               <p class="description">
-                Effortlessly manage coupons with options for additions, deductions, and returns—all
+                Effortlessly manage owner discount with options for additions, deductions, and returns—all
                 in one centralized platform.
               </p>
             </div>
@@ -304,7 +304,7 @@
       </Link>
 
 
- 
+
       <Link href="/service-charge" v-if="HasRole(['Admin', 'Manager'])">
         <div class="dashboard-card bg-[#12ddf8]">
           <div class="card-content">
