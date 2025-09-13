@@ -160,12 +160,11 @@
               </template>
 
               <template v-else>
-                <template v-if="products.data.length > 0">
-                  <!-- make the grid scroll vertically and fit 6 items per row on xl -->
+                <template v-if="visibleProducts.length > 0">
                   <div class="max-h-[55vh] overflow-y-auto">
                     <div class="grid gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
                       <div
-                        v-for="product in products.data.filter((p) => !(hidePromotions && p.is_promotion))"
+                        v-for="product in visibleProducts"
                         :key="product.id"
                         @click="product.stock_quantity > 0 && selectProduct(product)"
                         :class="[
@@ -224,22 +223,7 @@
                   </div>
 
                   <div class="flex items-center justify-between mt-6">
-                    <div class="pagination flex space-x-4">
-                      <!-- <button
-                        @click="fetchPage(products.prev_page_url)"
-                        :disabled="!products.prev_page_url"
-                        class="px-4 py-2 text-[15px] text-white bg-blue-500 rounded-md shadow-md hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                      >
-                        Previous
-                      </button> -->
-                      <!-- <button
-                        @click="fetchPage(products.next_page_url)"
-                        :disabled="!products.next_page_url"
-                        class="px-4 py-2 text-[15px] text-white bg-blue-500 rounded-md shadow-md hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                      >
-                        Next
-                      </button> -->
-                    </div>
+                    <div class="pagination flex space-x-4"></div>
                     <button
                       class="px-6 py-2 text-[15px] text-white bg-blue-600 rounded hover:bg-blue-700"
                       @click.prevent="closeModal(true)"
@@ -271,7 +255,7 @@
 
 <script setup>
 import { Dialog, DialogPanel, TransitionChild, TransitionRoot } from '@headlessui/vue';
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 import PromotionItemModal from '@/Components/custom/PromotionItemModal.vue';
 import axios from 'axios';
@@ -315,6 +299,54 @@ const allcategoriesFiltered = ref(allcategories);
 const selectedPromotion = ref(null);
 const selectedProducts = ref([]);
 
+/* ---------- computed: are we in "Open All Products" mode? ---------- */
+const isOpenAll = computed(() => simpleMode && (!initialCategory || initialCategory === ''));
+
+/* ---------- client-side search filter ---------- */
+const norm = (s) => (s ?? '').toString().toLowerCase();
+const searchTokens = computed(() =>
+  norm(search.value)
+    .split(/\s+/)
+    .filter(Boolean)
+);
+
+const visibleProducts = computed(() => {
+  const arr = products.value?.data || [];
+  if (searchTokens.value.length === 0) return arr;
+  return arr.filter((p) => {
+    const hay = norm(
+      `${p.name ?? ''} ${p.sku ?? ''} ${p.code ?? ''} ${p.category?.name ?? ''}`
+    );
+    return searchTokens.value.every((t) => hay.includes(t));
+  });
+});
+
+/* ---------- helpers ---------- */
+const toNumericOrNull = (v) => {
+  if (v === '' || v === undefined || v === null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+// merge paginated results
+const fetchAllPages = async (firstPage, payload) => {
+  const merged = { ...firstPage, data: [...(firstPage.data || [])] };
+  let url = firstPage.next_page_url;
+
+  while (url) {
+    const { data } = await axios.post(url, payload);
+    const page = data.products || { data: [] };
+    merged.data.push(...(page.data || []));
+    url = page.next_page_url;
+  }
+
+  merged.next_page_url = null;
+  merged.prev_page_url = null;
+  merged.current_page = 1;
+  merged.last_page = 1;
+  return merged;
+};
+
 const selectProduct = (product) => {
   const idx = selectedProducts.value.findIndex((p) => p.id === product.id);
   if (idx === -1) selectedProducts.value.push(product);
@@ -328,7 +360,6 @@ const viewPromotion = (product) => {
 
 const resetFilters = () => {
   search.value = '';
-  // keep category in simple mode; otherwise clear
   selectedCategory.value = simpleMode ? selectedCategory.value : '';
   stockStatus.value = '';
   sort.value = '';
@@ -348,15 +379,26 @@ const closeModal = (triggerImport = false) => {
 const fetchProducts = async (url = '/api/products') => {
   loading.value = true;
   try {
-    const { data } = await axios.post(url, {
+    const payload = {
       search: search.value,
-      selectedCategory: selectedCategory.value, // ✅ filters by category id
+      selectedCategory: toNumericOrNull(selectedCategory.value),
       stockStatus: simpleMode ? '' : stockStatus.value,
       sort: simpleMode ? '' : sort.value,
       color: simpleMode ? '' : color.value,
       size: simpleMode ? '' : size.value,
-    });
-    products.value = data.products || { data: [] };
+    };
+
+    const { data } = await axios.post(url, payload);
+    let page = data.products || { data: [] };
+
+    // Merge ALL pages when:
+    // - a specific category is selected, OR
+    // - we're in "Open All Products" mode (simpleMode + no initialCategory)
+    if (payload.selectedCategory !== null || isOpenAll.value) {
+      page = await fetchAllPages(page, payload);
+    }
+
+    products.value = page;
   } catch (err) {
     console.error('Error fetching products:', err);
     products.value = { data: [] };
@@ -366,7 +408,7 @@ const fetchProducts = async (url = '/api/products') => {
 };
 
 const fetchParentCategories = async (url = '/api/top-categories') => {
-  if (simpleMode) return; // no need when minimal
+  if (simpleMode) return;
   try {
     const { data } = await axios.post(url);
     parentCategories.value = data.categories || [];
@@ -396,13 +438,12 @@ watch(
   (isOpen) => {
     if (!isOpen) return;
     if (simpleMode) {
-      // lock to chosen category; clear other filters
       stockStatus.value = '';
       sort.value = '';
       color.value = '';
       size.value = '';
     }
-    selectedCategory.value = initialCategory ? String(initialCategory) : selectedCategory.value;
+    selectedCategory.value = initialCategory ? String(initialCategory) : '';
     fetchProducts();
   }
 );
