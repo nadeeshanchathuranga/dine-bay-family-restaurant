@@ -249,7 +249,7 @@
         </div>
 
         <!-- Right: Bill -->
-        <div class="flex w-1/2 h-full p-8 border-4 border-black rounded-3xl">
+   <div v-if="selectedTable" class="flex w-1/2 h-full p-8 border-4 border-black rounded-3xl">
           <div class="flex flex-col items-start justify-center w-full px-12">
             <div class="flex items-center justify-between w-full mb-4">
               <h2 class="text-5xl font-bold text-black">
@@ -288,7 +288,7 @@
 
             <div
               class="flex flex-col w-full space-y-4 py-4 border-b border-gray-200"
-              v-for="item in selectedTable.products"
+            v-for="item in (selectedTable?.products || [])"
               :key="item.id"
             >
               <div class="flex items-start space-x-4">
@@ -748,6 +748,7 @@ v-model="selectedTable.custom_discount_type"
   </div>
 
   <PosSuccessModel
+  v-if="selectedTable"
     :open="isSuccessModalOpen"
     @update:open="handleModalOpenUpdate"
     :products="selectedTable.products"
@@ -922,36 +923,38 @@ const savedSelectedTable = JSON.parse(localStorage.getItem("selectedTable")) || 
 const validateTableIntegrity = () => {
   const liveBills = tables.value.filter(t => t.id.startsWith('live-bill-'));
   const regularTables = tables.value.filter(t => !t.id.startsWith('live-bill-'));
-  
+
   console.log("Table integrity check:");
   console.log("Live Bills count:", liveBills.length, "Expected: 5");
   console.log("Regular tables count:", regularTables.length, "Expected: 25");
-  
+
   // Check for duplicate IDs
   const allIds = tables.value.map(t => t.id);
   const uniqueIds = [...new Set(allIds)];
   if (allIds.length !== uniqueIds.length) {
     console.error("DUPLICATE TABLE IDs DETECTED!", allIds);
   }
-  
+
   // Check Live Bills
   liveBills.forEach(lb => {
     if (lb.order_type !== "takeaway") {
       console.error("Live Bill has wrong order_type:", lb.id, lb.order_type);
     }
   });
-  
+
   return allIds.length === uniqueIds.length;
 };
 
 const tables = ref(savedTables);
 const nextTableNumber = ref(savedNextTableNumber);
-const selectedTable = ref(savedSelectedTable);
+const selectedTable = ref(savedSelectedTable ?? null);
+
+
 
 /* === Seed fixed 5 Live Bills + tables 1..25 (numbers 6..30 internally) === */
 const seedFixedTables = () => {
   console.log("Seeding tables...");
-  
+
   // Create 5 Live Bills (live-bill-1 through live-bill-5)
   const liveBills = [];
   for (let i = 1; i <= 5; i++) {
@@ -990,7 +993,7 @@ const seedFixedTables = () => {
   tables.value.filter(t => !t.id.startsWith("live-bill-")).forEach(t => byNum.set(t.number, t));
 
   const stable = [...liveBills];
-  
+
   // Create tables 1-25 (using internal numbers 6-30)
   for (let n = 6; n <= 30; n++) {
     if (byNum.has(n)) {
@@ -1349,20 +1352,20 @@ const removeTable = (index) => {
 /* Clear (do not delete) the currently selected table after confirm */
 const removeSelectedTable = () => {
   if (!selectedTable.value) return;
-  
+
   const originalTableId = selectedTable.value.id;
   const originalTableNumber = selectedTable.value.number;
   const isLiveBill = originalTableId?.startsWith('live-bill-');
-  
+
   console.log("Clearing table after order confirmation:", {
     id: originalTableId,
     number: originalTableNumber,
     isLiveBill: isLiveBill
   });
-  
+
   // Find the EXACT table by ID to avoid any confusion
   const idx = tables.value.findIndex((table) => table.id === originalTableId);
-  
+
   if (idx === -1) {
     console.error("Table not found in tables array:", originalTableId);
     return;
@@ -1373,9 +1376,9 @@ const removeSelectedTable = () => {
     console.error("Table ID mismatch! Expected:", originalTableId, "Found:", tables.value[idx].id);
     return;
   }
-  
+
   console.log("Found table at index:", idx, "ID:", tables.value[idx].id, "isLiveBill:", isLiveBill);
-  
+
   // Create a completely new cleared table object
   const clearedTable = {
     id: originalTableId, // Keep original ID
@@ -1397,14 +1400,14 @@ const removeSelectedTable = () => {
 
   // Replace the table in the array
   tables.value[idx] = clearedTable;
-  
+
   // Update selected table reference
   selectedTable.value = clearedTable;
-  
+
   // Force save to localStorage immediately
   localStorage.setItem("tables", JSON.stringify(tables.value));
   localStorage.setItem("selectedTable", JSON.stringify(clearedTable));
-  
+
   console.log("Table cleared successfully:", clearedTable.id, "at index:", idx);
   console.log("All table IDs after clear:", tables.value.map(t => t.id));
 };
@@ -1415,10 +1418,10 @@ const handleModalOpenUpdate = (newValue) => {
     // Only clear the current table and reset customer data
     const currentTableId = selectedTable.value?.id;
     console.log("Modal closed, clearing current table:", currentTableId);
-    
+
     // Clear current table
     removeSelectedTable();
-    
+
     // Reset customer data
     customer.value = {
       name: "",
@@ -1427,10 +1430,10 @@ const handleModalOpenUpdate = (newValue) => {
       bdate: "",
     };
     cash.value = 0;
-    
+
     // Reset owner state
     resetOwnerState();
-    
+
     // Don't call seedFixedTables() or refreshData() to avoid affecting other tables
     console.log("Order completion cleanup finished for:", currentTableId);
   }
@@ -1512,7 +1515,7 @@ await axios.post("/pos/submit", {
   owner_id: ownerForm.owner_id || null,
   owner_discount_value: ownerDiscountValue.value,
   owner_override_amount: ownerFetch.value.override_amount || 0,
-  
+
   // Add table identification for backend
   table_id: currentTable.id,
   table_number: currentTable.number,
@@ -1861,7 +1864,7 @@ const sendKOT = (table) => {
       : "";
 
     // Display table or Live Bill number appropriately
-    const tableDisplay = table.id?.startsWith('live-bill-') 
+    const tableDisplay = table.id?.startsWith('live-bill-')
       ? `Live Bill #${table.id.split('-')[2]}`
       : `Table ${table.number - 5}`;
 
