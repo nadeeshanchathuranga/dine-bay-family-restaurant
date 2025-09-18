@@ -429,75 +429,9 @@
       </div>
     </div>
 
-    <!-- EXPENSES SECTION -->
-    <div class="w-full bg-white border-4 border-black rounded-xl p-6 mt-8">
-      <h2 class="text-2xl font-semibold text-slate-700 text-center pb-4">Expenses</h2>
+  
 
-      <div class="flex justify-between items-center pb-4">
-        <div class="flex gap-4">
-          <button @click="downloadExpensesPDF"
-                  class="px-4 py-2 text-md font-semibold text-white bg-orange-600 rounded-lg hover:bg-orange-700 shadow-md">
-            Download PDF
-          </button>
-        </div>
 
-        <div class="flex items-center gap-3">
-          <div class="py-2 px-4 border-2 border-red-600 rounded-xl bg-red-100 shadow-sm text-center">
-            <p class="text-sm font-extrabold text-black uppercase">
-              Total Expenses:
-              <span class="text-base font-bold">
-                {{ totalExpenseAmount.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) }} LKR
-              </span>
-            </p>
-          </div>
-          <div class="py-2 px-4 border-2 border-slate-600 rounded-xl bg-slate-100 shadow-sm text-center">
-            <p class="text-sm font-extrabold text-black uppercase">
-              Records:
-              <span class="text-base font-bold">{{ totalExpenseCount }}</span>
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div class="overflow-x-auto overflow-y-auto max-h-[420px] border rounded-xl mt-2">
-        <table id="expenseTbl" class="w-full text-gray-800 bg-white border border-gray-300 rounded-lg shadow-md table-auto">
-          <colgroup>
-            <col style="width:60px" />
-            <col style="width:220px" />
-            <col style="width:160px" />
-            <col style="width:140px" />
-          </colgroup>
-
-          <thead class="sticky top-0 z-10">
-            <tr class="bg-gradient-to-r from-rose-700 via-rose-600 to-rose-700 text-white text-[14px] border-b border-rose-800">
-              <th class="p-3 text-left font-semibold">#</th>
-              <th class="p-3 text-left font-semibold">Title</th>
-              <th class="p-3 text-right font-semibold">Amount (LKR)</th>
-              <th class="p-3 text-left font-semibold">Expense Date</th>
-            </tr>
-          </thead>
-
-          <tbody class="text-[12px] font-medium">
-            <tr v-for="(e, i) in expenses" :key="e.id ?? i" class="border-b transition duration-200 hover:bg-gray-100">
-              <td class="p-3">{{ i + 1 }}</td>
-              <td class="p-3">{{ e.title || '—' }}</td>
-              <td class="p-3 text-right">{{ toMoney(e.amount) }}</td>
-              <td class="p-3">{{ formatDate(e.expense_date) }}</td>
-            </tr>
-          </tbody>
-
-          <tfoot class="bg-gray-50 text-[12px] font-semibold">
-            <tr>
-              <td class="p-3 text-right" colspan="2">Total:</td>
-              <td class="p-3 text-right">
-                {{ totalExpenseAmount.toLocaleString(undefined,{minimumFractionDigits:2}) }}
-              </td>
-              <td class="p-3"></td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </div> <!-- /EXPENSES SECTION -->
 
   </div>
 
@@ -546,9 +480,7 @@ const props = defineProps({
   categorySales: { type: Object, required: true },
   employeeSalesSummary: { type: Object, required: true },
 
-  expenses: { type: Array, required: true },
-  totalExpenseAmount: { type: Number, required: true },
-  totalExpenseCount: { type: Number, required: true },
+
 });
 
 // State
@@ -557,10 +489,7 @@ const endDate   = ref(props.endDate);
 const products  = ref(props.products);
 const sales     = ref(props.sales);
 
-// NEW — expenses state
-const expenses            = ref(props.expenses);
-const totalExpenseAmount  = ref(props.totalExpenseAmount || 0);
-const totalExpenseCount   = ref(props.totalExpenseCount || 0);
+
 
 // Formatting helpers
 const toMoney   = (n) => (Number(n || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -799,7 +728,7 @@ const downloadSalesTablePDF = () => {
   // Helper functions (same as in your template)
   const toMoney = (n) => (Number(n || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const formatDate = (d) => (d ? new Date(d).toLocaleDateString() : "");
-  
+
   // Sale quantity calculation (same as template)
   const saleQty = (s) => {
     if (!Array.isArray(s.sale_items)) return 0;
@@ -898,16 +827,16 @@ const downloadSalesTablePDF = () => {
   doc.text(`Date range: ${dateRangeLabel.value} • Generated: ${now.toLocaleString()}`, 14, 18);
 
   // PDF Table
-  const head = [[ 
-    "#", 
-    "Date", 
-    "Order Number", 
-    "Customer", 
-    "Qty", 
-    "Gross (LKR)", 
-    "Discounts", 
-    "Cost (LKR)", 
-    "Profit (LKR)" 
+  const head = [[
+    "#",
+    "Date",
+    "Order Number",
+    "Customer",
+    "Qty",
+    "Gross (LKR)",
+    "Discounts",
+    "Cost (LKR)",
+    "Profit (LKR)"
   ]];
 
   const foot = [[
@@ -952,55 +881,7 @@ const downloadSalesTablePDF = () => {
   const safe = (s) => String(s).replace(/[^\dA-Za-z-]/g, "_");
   doc.save(`Sales_Report_${safe(dateRangeLabel.value)}.pdf`);
 };
-// ===== Expenses PDF =====
-const downloadExpensesPDF = () => {
-  const doc = new jsPDF("p", "mm", "a4");
-  const now = new Date();
 
-  doc.setFontSize(16);
-  doc.text("Expenses Report", 14, 12);
-  doc.setFontSize(10);
-  doc.text(`Date range: ${dateRangeLabel.value} • Generated: ${now.toLocaleString()}`, 14, 18);
-
-  const rows = expenses.value.map((e, i) => [
-    i + 1,
-    e.title || "—",
-    (Number(e.amount || 0)).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}),
-    e.expense_date ? new Date(e.expense_date).toLocaleDateString() : "—",
-  ]);
-
-  doc.autoTable({
-    head: [["#", "Title", "Amount (LKR)", "Expense Date"]],
-    body: rows,
-    startY: 24,
-    theme: "striped",
-    styles: { fontSize: 9, cellPadding: 2 },
-    headStyles: { fillColor: [190, 18, 60], textColor: 255 },
-    columnStyles: {
-      0: { cellWidth: 10 },
-      1: { cellWidth: 96 },
-      2: { cellWidth: 40, halign: "right" },
-      3: { cellWidth: 40 },
-    },
-    margin: { top: 18, left: 8, right: 8 },
-  });
-
-  const totalY = (doc.lastAutoTable?.finalY || 24) + 4;
-  doc.autoTable({
-    startY: totalY,
-    theme: "plain",
-    styles: { fontSize: 10, fontStyle: "bold" },
-    body: [[
-      { content: "Total:", styles: { halign: "right" } },
-      { content: totalExpenseAmount.value.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}) + " LKR", styles: { halign: "right" } },
-    ]],
-    columnStyles: { 0: { cellWidth: 106 }, 1: { cellWidth: 80 } },
-    margin: { left: 8, right: 8 },
-  });
-
-  const safe = (s) => s.replace(/[^\dA-Za-z-]/g, "_");
-  doc.save(`Expenses_${safe(dateRangeLabel.value)}.pdf`);
-};
 
 // ===== Stock table PDF =====
 const downloadStockTablePDF = () => {
@@ -1080,7 +961,7 @@ const downloadStockTablePDF = () => {
 onMounted(() => {
   const jq = window.$;
 
- 
+
 
   // Stock table
   const $stock = jq && jq("#stockQtyTbl");
@@ -1103,24 +984,7 @@ onMounted(() => {
   }
 
   // Expenses table
-  const $exp = jq && jq("#expenseTbl");
-  if ($exp && jq.fn.dataTable) {
-    if (jq.fn.dataTable.isDataTable($exp)) $exp.DataTable().destroy();
-    const de = $exp.DataTable({
-      dom: "Bfrtip",
-      paging: false,
-      buttons: [],
-      columnDefs: [{ targets: 0, searchable: false, orderable: false }],
-      initComplete: function () {
-        const $input = jq("div.dataTables_filter input");
-        $input.attr("placeholder", "Search expenses...");
-        $input.on("keypress", function (e) {
-          if (e.which == 13) de.search(this.value).draw();
-        });
-      },
-      language: { search: "" },
-    });
-  }
+
 });
 </script>
 

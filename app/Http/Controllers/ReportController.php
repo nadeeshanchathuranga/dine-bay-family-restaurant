@@ -13,7 +13,7 @@ use Carbon\Carbon;
 
 class ReportController extends Controller
 {
- 
+
 
   public function index(Request $request)
 {
@@ -130,14 +130,7 @@ class ReportController extends Controller
     // Distinct customers (same filter)
     $totalCustomer = (clone $salesQuery)->distinct('customer_id')->count('customer_id');
 
-    // -------- Expenses (filter by created_at) --------
-    $expenseQuery = ExpenseNew::query();
-    if ($from || $to) {
-        $applyCreatedWindow($expenseQuery);
-    }
-    $expenses = $expenseQuery->orderBy('created_at', 'desc')->get();
-    $totalExpenseAmount = (float) $expenses->sum('amount');
-    $totalExpenseCount  = $expenses->count();
+
 
     return Inertia::render('Reports/Index', [
         'products'                  => $products,
@@ -157,10 +150,7 @@ class ReportController extends Controller
         'categorySales'             => $categorySales,
         'employeeSalesSummary'      => $employeeSalesSummary,
         'paymentMethodTotals'       => $paymentMethodTotals,
-
-        'expenses'                  => $expenses,
-        'totalExpenseAmount'        => round($totalExpenseAmount, 2),
-        'totalExpenseCount'         => $totalExpenseCount,
+ 
     ]);
 }
 
