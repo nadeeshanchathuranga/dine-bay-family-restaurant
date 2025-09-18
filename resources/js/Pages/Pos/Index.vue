@@ -79,21 +79,41 @@
               </h1>
             </div>
 
-            <!-- Live Bill shown separately -->
-            <div
-              :class="[
-                'w-full flex flex-col justify-center items-center rounded-xl px-3 py-4 border border-[#2563EB] text-center mb-3',
-                (selectedTable && tables[0] && tables[0].id === selectedTable.id) ? 'bg-blue-100' : 'hover:bg-blue-50',
-              ]"
-              @click="selectTable(tables[0])"
-            >
-              <div class="text-xl text-black font-bold">Live Bill</div>
+            <!-- Live Bills shown separately (5 slots) -->
+            <div class="grid grid-cols-5 gap-3 mb-3">
+              <div
+                v-for="liveBill in tables.slice(0, 5)"
+                :key="liveBill.id"
+                :class="[
+                  'w-full flex flex-col justify-center items-center rounded-xl px-2 py-4 border border-[#2563EB] text-center',
+                  (selectedTable && liveBill.id === selectedTable.id) ? 'bg-blue-100'
+                    : (liveBill.products && liveBill.products.length > 0 ? 'bg-yellow-100' : ''),
+                  'hover:bg-blue-50',
+                ]"
+                @click="selectTable(liveBill)"
+              >
+                <div class="text-lg text-black font-bold">Live Bill</div>
+                <div class="text-4xl text-black font-bold">
+                  {{ liveBill.id.split('-')[2] }}
+                </div>
+
+                <button
+                  @click.stop="sendKOT(liveBill)"
+                  :disabled="isKOTDisabled(liveBill)"
+                  :class="[
+                    'mt-2 px-3 py-1 tracking-wide text-white text-sm font-semibold rounded-lg',
+                    isKOTDisabled(liveBill) ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
+                  ]"
+                >
+                  {{ liveBill.kotStatus === 'sent' ? 'KOT Sent' : 'KOT' }}
+                </button>
+              </div>
             </div>
 
             <!-- exactly 25 tables (5 x 5) -->
             <div class="grid grid-cols-5 gap-3">
               <div
-                v-for="table in tables.slice(1, 26)"
+                v-for="table in tables.slice(5, 30)"
                 :key="table.id"
                 :class="[
                   'w-full flex flex-col justify-center items-center rounded-xl px-2 py-4 border border-[#2563EB] text-center',
@@ -105,7 +125,7 @@
               >
                 <div class="text-lg text-black font-bold">Table</div>
                 <div class="text-4xl text-black font-bold">
-                  {{ table.number - 1 }}
+                  {{ table.number - 5 }}
                 </div>
 
                 <button
@@ -234,9 +254,9 @@
             <div class="flex items-center justify-between w-full mb-4">
               <h2 class="text-5xl font-bold text-black">
                 {{
-                  selectedTable?.id === 'default'
-                    ? 'Live Bill'
-                    : `Table ${selectedTable?.number - 1}`
+                  selectedTable?.id?.startsWith('live-bill-')
+                    ? `Live Bill #${selectedTable.id.split('-')[2]}`
+                    : `Table ${selectedTable?.number - 5}`
                 }}
               </h2>
 
@@ -248,17 +268,16 @@
 
             <div class="w-full px-12">
               <div
-                v-if="selectedTable?.id === 'default'"
+                v-if="selectedTable?.id?.startsWith('live-bill-')"
                 class="w-full flex justify-center items-center mb-4 space-x-4"
               >
                 <select
                   id="order_type"
                   v-model="selectedTable.order_type"
                   class="w-full text-center p-2 border-2 border-black rounded cursor-pointer"
+                  disabled
                 >
-                  <option value="" disabled>Select an Order Type</option>
                   <option value="takeaway">Takeaway</option>
-                  <option value="pickup">Delivery</option>
                 </select>
               </div>
             </div>
@@ -379,7 +398,7 @@
               </div>
 
               <div
-                v-if="selectedTable && selectedTable.id !== 'default' && selectedTable.order_type !== 'pickup'"
+                v-if="selectedTable && !selectedTable.id?.startsWith('live-bill-') && selectedTable.order_type !== 'pickup'"
                 class="flex items-center justify-between w-full px-8 pt-4 pb-4 border-b border-black"
               >
                 <select
@@ -894,71 +913,96 @@ const filteredBanks = computed(() =>
 );
 
 // Tables state - load/save LS
-const savedTables = JSON.parse(localStorage.getItem("tables")) || [
-  {
-    id: "default",
-    number: 1, // Live Bill
-    orderId: generateOrderId(),
-    products: [],
-    balance: 0,
-    custom_discount: 0.0,
-    custom_discount_type: "fixed",
-    kitchen_note: "",
-    order_type: "",
-    delivery_charge: "",
-    service_charge: "",
-    bank_service_charge: "",
-    lastKotSnapshot: null, // snapshot of last sent KOT quantities
-  },
-];
+const savedTables = JSON.parse(localStorage.getItem("tables")) || [];
 
-const savedNextTableNumber = JSON.parse(localStorage.getItem("nextTableNumber")) || 2;
-const savedSelectedTable = JSON.parse(localStorage.getItem("selectedTable")) || savedTables[0];
+const savedNextTableNumber = JSON.parse(localStorage.getItem("nextTableNumber")) || 6;
+const savedSelectedTable = JSON.parse(localStorage.getItem("selectedTable")) || null;
+
+// Add validation function to ensure table integrity
+const validateTableIntegrity = () => {
+  const liveBills = tables.value.filter(t => t.id.startsWith('live-bill-'));
+  const regularTables = tables.value.filter(t => !t.id.startsWith('live-bill-'));
+  
+  console.log("Table integrity check:");
+  console.log("Live Bills count:", liveBills.length, "Expected: 5");
+  console.log("Regular tables count:", regularTables.length, "Expected: 25");
+  
+  // Check for duplicate IDs
+  const allIds = tables.value.map(t => t.id);
+  const uniqueIds = [...new Set(allIds)];
+  if (allIds.length !== uniqueIds.length) {
+    console.error("DUPLICATE TABLE IDs DETECTED!", allIds);
+  }
+  
+  // Check Live Bills
+  liveBills.forEach(lb => {
+    if (lb.order_type !== "takeaway") {
+      console.error("Live Bill has wrong order_type:", lb.id, lb.order_type);
+    }
+  });
+  
+  return allIds.length === uniqueIds.length;
+};
 
 const tables = ref(savedTables);
 const nextTableNumber = ref(savedNextTableNumber);
 const selectedTable = ref(savedSelectedTable);
 
-/* === Seed fixed Live Bill + tables 1..25 (numbers 2..26 internally) === */
+/* === Seed fixed 5 Live Bills + tables 1..25 (numbers 6..30 internally) === */
 const seedFixedTables = () => {
-  // Make sure Live Bill exists
-  let def = tables.value.find(t => t.id === "default");
-  if (!def) {
-    def = {
-      id: "default",
-      number: 1,
-      orderId: generateOrderId(),
-      products: [],
-      cash: 0.0,
-      balance: 0.0,
-      custom_discount: 0.0,
-      custom_discount_type: "percent",
-      kitchen_note: "",
-      order_type: "",
-      delivery_charge: "",
-      service_charge: "",
-      bank_service_charge: "",
-      lastKotSnapshot: null,
-    };
-  } else if (!('lastKotSnapshot' in def)) {
-    def.lastKotSnapshot = null;
+  console.log("Seeding tables...");
+  
+  // Create 5 Live Bills (live-bill-1 through live-bill-5)
+  const liveBills = [];
+  for (let i = 1; i <= 5; i++) {
+    const existingLiveBill = tables.value.find(t => t.id === `live-bill-${i}`);
+    if (existingLiveBill) {
+      if (!('kotStatus' in existingLiveBill)) existingLiveBill.kotStatus = "pending";
+      if (!('lastKotSnapshot' in existingLiveBill)) existingLiveBill.lastKotSnapshot = null;
+      if (!existingLiveBill.order_type) existingLiveBill.order_type = "takeaway";
+      liveBills.push(existingLiveBill);
+      console.log(`Restored existing Live Bill ${i}:`, existingLiveBill.id);
+    } else {
+      const newLiveBill = {
+        id: `live-bill-${i}`,
+        number: i, // Live Bills use numbers 1-5
+        orderId: generateOrderId(),
+        products: [],
+        cash: 0.0,
+        balance: 0.0,
+        custom_discount: 0.0,
+        custom_discount_type: "fixed",
+        kitchen_note: "",
+        order_type: "takeaway", // Live Bills are always takeaway
+        delivery_charge: "",
+        service_charge: "",
+        bank_service_charge: "",
+        kotStatus: "pending",
+        lastKotSnapshot: null,
+      };
+      liveBills.push(newLiveBill);
+      console.log(`Created new Live Bill ${i}:`, newLiveBill.id);
+    }
   }
 
-  // Map existing non-default by number
+  // Map existing non-live-bill tables by number
   const byNum = new Map();
-  tables.value.filter(t => t.id !== "default").forEach(t => byNum.set(t.number, t));
+  tables.value.filter(t => !t.id.startsWith("live-bill-")).forEach(t => byNum.set(t.number, t));
 
-  const stable = [def];
-  for (let n = 2; n <= 26; n++) {
+  const stable = [...liveBills];
+  
+  // Create tables 1-25 (using internal numbers 6-30)
+  for (let n = 6; n <= 30; n++) {
     if (byNum.has(n)) {
       const t = byNum.get(n);
-      if (!('kotStatus' in t)) t.kotStatus = "pending"; // normalize
+      if (!('kotStatus' in t)) t.kotStatus = "pending";
       if (!('lastKotSnapshot' in t)) t.lastKotSnapshot = null;
       stable.push(t);
+      console.log(`Restored existing Table ${n}:`, t.id, `(display: ${n-5})`);
     } else {
-      stable.push({
+      const newTable = {
         id: `t${n}`,
-        number: n,             // displays as n-1 => 1..25
+        number: n,             // displays as n-5 => 1..25
         orderId: generateOrderId(),
         products: [],
         cash: 0.0,
@@ -972,25 +1016,37 @@ const seedFixedTables = () => {
         bank_service_charge: "",
         kotStatus: "pending",
         lastKotSnapshot: null,
-      });
+      };
+      stable.push(newTable);
+      console.log(`Created new Table ${n}:`, newTable.id, `(display: ${n-5})`);
     }
   }
   tables.value = stable;
 
-  // Ensure a valid selection
+  console.log("Total tables created:", tables.value.length);
+  console.log("Live Bills:", tables.value.filter(t => t.id.startsWith('live-bill-')).map(t => t.id));
+  console.log("Regular Tables:", tables.value.filter(t => !t.id.startsWith('live-bill-')).map(t => `${t.id}(${t.number-5})`));
+
+  // Ensure a valid selection - default to first Live Bill
   if (!selectedTable.value || !tables.value.find(t => t.id === selectedTable.value.id)) {
-    selectedTable.value = tables.value[0];
+    selectedTable.value = tables.value[0]; // First Live Bill
+    console.log("Selected default table:", selectedTable.value.id);
+  } else {
+    console.log("Keeping existing selection:", selectedTable.value.id);
   }
 };
 
 onMounted(() => {
   seedFixedTables();
+  validateTableIntegrity();
   document.addEventListener("keypress", handleScannerInput);
 });
 
 watch(
   tables,
   (newTables) => {
+    console.log("Tables changed, validating integrity...");
+    validateTableIntegrity();
     localStorage.setItem("tables", JSON.stringify(newTables));
   },
   { deep: true }
@@ -1013,7 +1069,7 @@ watch(
   () => selectedTable.value?.products,
   () => {
     const t = selectedTable.value;
-    if (!t || t.id === "default") return;
+    if (!t || !t.id) return;
     if (!Array.isArray(t.products)) return;
     // Any change after a send should allow sending KOT again
     if (t.kotStatus === "sent") {
@@ -1160,7 +1216,7 @@ const employee_id = ref("");
 const selectedPaymentMethod = ref("cash");
 
 const refreshData = async () => {
-  if (selectedTable.value?.id === "default") {
+  if (selectedTable.value?.id?.startsWith('live-bill-')) {
     const today = new Date();
     const formattedDate = `${today.getFullYear().toString().slice(-2)}.${String(today.getMonth() + 1).padStart(2, "0")}.${String(today.getDate()).padStart(2, "0")}`;
 
@@ -1171,29 +1227,31 @@ const refreshData = async () => {
       existingOrderId = generateOrderId();
     }
 
-    const defaultTable = {
-      id: "default",
-      number: 1,
+    const liveBillIndex = selectedTable.value.id.split('-')[2];
+    const defaultLiveBill = {
+      id: `live-bill-${liveBillIndex}`,
+      number: parseInt(liveBillIndex),
       orderId: existingOrderId,
       products: [],
       cash: 0.0,
       balance: 0.0,
       custom_discount: 0.0,
-       custom_discount_type: "fixed",
+      custom_discount_type: "fixed",
       kitchen_note: "",
-      order_type: "",
+      order_type: "takeaway",
       delivery_charge: "",
       service_charge: "",
       bank_service_charge: "",
       owner_discount_value: "",
       lastKotSnapshot: null,
+      kotStatus: "pending",
     };
 
-    selectedTable.value = defaultTable;
+    selectedTable.value = defaultLiveBill;
 
-    const defaultIndex = tables.value.findIndex(table => table.id === "default");
-    if (defaultIndex !== -1) {
-      tables.value[defaultIndex] = defaultTable;
+    const liveBillTableIndex = tables.value.findIndex(table => table.id === `live-bill-${liveBillIndex}`);
+    if (liveBillTableIndex !== -1) {
+      tables.value[liveBillTableIndex] = defaultLiveBill;
     }
 
     customer.value = {
@@ -1273,6 +1331,12 @@ const addTable = () => {
 };
 
 const selectTable = (table) => {
+  console.log("Selecting table:", {
+    id: table.id,
+    number: table.number,
+    isLiveBill: table.id?.startsWith('live-bill-'),
+    displayNumber: table.id?.startsWith('live-bill-') ? table.id.split('-')[2] : table.number - 5
+  });
   selectedTable.value = table;
 };
 
@@ -1285,38 +1349,90 @@ const removeTable = (index) => {
 /* Clear (do not delete) the currently selected table after confirm */
 const removeSelectedTable = () => {
   if (!selectedTable.value) return;
-  const idx = tables.value.findIndex((table) => table.id === selectedTable.value.id);
+  
+  const originalTableId = selectedTable.value.id;
+  const originalTableNumber = selectedTable.value.number;
+  const isLiveBill = originalTableId?.startsWith('live-bill-');
+  
+  console.log("Clearing table after order confirmation:", {
+    id: originalTableId,
+    number: originalTableNumber,
+    isLiveBill: isLiveBill
+  });
+  
+  // Find the EXACT table by ID to avoid any confusion
+  const idx = tables.value.findIndex((table) => table.id === originalTableId);
+  
+  if (idx === -1) {
+    console.error("Table not found in tables array:", originalTableId);
+    return;
+  }
 
-  // Reset the selected table in place
-  const cleared = {
-    ...tables.value[idx],
+  // Double-check we found the right table
+  if (tables.value[idx].id !== originalTableId) {
+    console.error("Table ID mismatch! Expected:", originalTableId, "Found:", tables.value[idx].id);
+    return;
+  }
+  
+  console.log("Found table at index:", idx, "ID:", tables.value[idx].id, "isLiveBill:", isLiveBill);
+  
+  // Create a completely new cleared table object
+  const clearedTable = {
+    id: originalTableId, // Keep original ID
+    number: originalTableNumber, // Keep original number
     orderId: generateOrderId(),
     products: [],
     cash: 0.0,
     balance: 0.0,
     custom_discount: 0.0,
-    custom_discount_type: "percent",
+    custom_discount_type: isLiveBill ? "fixed" : "percent",
     kitchen_note: "",
-    order_type: "",
+    order_type: isLiveBill ? "takeaway" : "",
     delivery_charge: "",
     service_charge: "",
     bank_service_charge: "",
     lastKotSnapshot: null,
+    kotStatus: "pending",
   };
 
-  tables.value[idx] = cleared;
-  selectedTable.value = cleared;
+  // Replace the table in the array
+  tables.value[idx] = clearedTable;
+  
+  // Update selected table reference
+  selectedTable.value = clearedTable;
+  
+  // Force save to localStorage immediately
+  localStorage.setItem("tables", JSON.stringify(tables.value));
+  localStorage.setItem("selectedTable", JSON.stringify(clearedTable));
+  
+  console.log("Table cleared successfully:", clearedTable.id, "at index:", idx);
+  console.log("All table IDs after clear:", tables.value.map(t => t.id));
 };
 
 const handleModalOpenUpdate = (newValue) => {
   isSuccessModalOpen.value = newValue;
   if (!newValue) {
-    // Clear current table and move selection to Live Bill to remove blue highlight
+    // Only clear the current table and reset customer data
+    const currentTableId = selectedTable.value?.id;
+    console.log("Modal closed, clearing current table:", currentTableId);
+    
+    // Clear current table
     removeSelectedTable();
-    seedFixedTables();
-    selectedTable.value = tables.value[0]; // Live Bill
+    
+    // Reset customer data
+    customer.value = {
+      name: "",
+      contactNumber: "",
+      email: "",
+      bdate: "",
+    };
     cash.value = 0;
-    refreshData();
+    
+    // Reset owner state
+    resetOwnerState();
+    
+    // Don't call seedFixedTables() or refreshData() to avoid affecting other tables
+    console.log("Order completion cleanup finished for:", currentTableId);
   }
 };
 
@@ -1326,6 +1442,12 @@ const orderId = computed(() => {
 });
 
 const submitOrder = async () => {
+  if (!selectedTable.value) {
+    isAlertModalOpen.value = true;
+    message.value = "No table selected.";
+    return;
+  }
+
   if (!total.value || parseFloat(total.value) <= 0) {
     isAlertModalOpen.value = true;
     message.value = "Total amount cannot be zero or less. Please check the bill.";
@@ -1338,44 +1460,66 @@ const submitOrder = async () => {
     return;
   }
 
+  // Create a snapshot of the current table to prevent reference issues
+  const currentTable = {
+    id: selectedTable.value.id,
+    number: selectedTable.value.number,
+    orderId: selectedTable.value.orderId,
+    products: [...selectedTable.value.products], // Deep copy products
+    order_type: selectedTable.value.order_type,
+    kitchen_note: selectedTable.value.kitchen_note,
+    custom_discount: selectedTable.value.custom_discount,
+    custom_discount_type: selectedTable.value.custom_discount_type,
+    delivery_charge: selectedTable.value.delivery_charge,
+    service_charge: selectedTable.value.service_charge,
+    bank_service_charge: selectedTable.value.bank_service_charge,
+    cash: selectedTable.value.cash,
+    bank_name: selectedTable.value.bank_name,
+    card_last4: selectedTable.value.card_last4,
+  };
+
   try {
+    // Debug: Log the current selected table info
+    console.log("Submitting order for table:", {
+      id: currentTable.id,
+      number: currentTable.number,
+      order_type: currentTable.order_type,
+      products: currentTable.products.length,
+      isLiveBill: currentTable.id?.startsWith('live-bill-')
+    });
 
 await axios.post("/pos/submit", {
   customer: customer.value,
-  products: selectedTable.value.products,
+  products: currentTable.products,
   employee_id: employee_id.value,
   paymentMethod: selectedPaymentMethod.value,
   userId: props.loggedInUser.id,
-  orderId: selectedTable.value.orderId,
+  orderId: currentTable.orderId,
 
-  custom_discount: Number(selectedTable.value.custom_discount || 0),
-  custom_discount_type: selectedTable.value.custom_discount_type || "fixed",
+  custom_discount: Number(currentTable.custom_discount || 0),
+  custom_discount_type: currentTable.custom_discount_type || "fixed",
   custom_discount_value: Number(customDiscCalculated.value || 0), // optional but recommended
 
-  cash: selectedTable.value.cash,
-  bank_name: selectedTable.value.bank_name,
-  card_last4: selectedTable.value.card_last4,
-  kitchen_note: selectedTable.value.kitchen_note,
-  delivery_charge: selectedTable.value.delivery_charge,
-  service_charge: selectedTable.value.service_charge,
-  bank_service_charge: selectedTable.value.bank_service_charge,
-  order_type: selectedTable.value.order_type,
+  cash: currentTable.cash,
+  bank_name: currentTable.bank_name,
+  card_last4: currentTable.card_last4,
+  kitchen_note: currentTable.kitchen_note,
+  delivery_charge: currentTable.delivery_charge,
+  service_charge: currentTable.service_charge,
+  bank_service_charge: currentTable.bank_service_charge,
+  order_type: currentTable.order_type,
   total: total.value,
   owner_id: ownerForm.owner_id || null,
   owner_discount_value: ownerDiscountValue.value,
   owner_override_amount: ownerFetch.value.override_amount || 0,
+  
+  // Add table identification for backend
+  table_id: currentTable.id,
+  table_number: currentTable.number,
+  is_live_bill: currentTable.id?.startsWith('live-bill-') || false,
 });
 
-
-
-
-
-
-
-
-
-
-
+    console.log("Order submitted successfully for:", currentTable.id);
 
     isSuccessModalOpen.value = true;
     selectedTable.value.orderId = generateOrderId();
@@ -1386,6 +1530,7 @@ await axios.post("/pos/submit", {
       email: "",
     };
   } catch (error) {
+    console.error("Error submitting order for table:", currentTable.id, error);
     if (error.response?.status === 423) {
       isAlertModalOpen.value = true;
       message.value = error.response.data.message;
@@ -1659,7 +1804,7 @@ const hasKotChanges = (table) => {
 
 /* === KOT enable/disable helper (updated) === */
 const isKOTDisabled = (table) => {
-  if (!table || table.id === "default") return true;
+  if (!table) return true;
   if (!table.products || table.products.length === 0) return true;
   // Enable only when at least one item's quantity increased
   return getKotDelta(table).length === 0;
@@ -1670,7 +1815,7 @@ const isKOTDisabled = (table) => {
 ========================= */
 const sendKOT = (table) => {
   try {
-    if (!table || table.id === "default") {
+    if (!table) {
       isAlertModalOpen.value = true;
       message.value = "Select a table to print KOT.";
       return;
@@ -1714,6 +1859,11 @@ const sendKOT = (table) => {
     const noteBlock = table.kitchen_note
       ? `<div class="note"><b>Kitchen Note:</b> ${table.kitchen_note}</div>`
       : "";
+
+    // Display table or Live Bill number appropriately
+    const tableDisplay = table.id?.startsWith('live-bill-') 
+      ? `Live Bill #${table.id.split('-')[2]}`
+      : `Table ${table.number - 5}`;
 
     const receiptHTML = `
       <!doctype html>            <!doctype html> <html>
@@ -1841,7 +1991,7 @@ const sendKOT = (table) => {
       <div class="cell"><b>Date:</b> ${dateStr}</div>
       <div class="cell"><b>Time:</b> ${timeStr}</div>
       <div class="cell"><b>Order:</b> ${table.orderId}</div>
-      <div class="cell"><b>Table:</b> ${table.number - 1}</div>
+      <div class="cell"><b>${tableDisplay}</b></div>
       <div class="cell"><b>Type:</b> ${orderType}</div>
     </div>
 
@@ -2033,7 +2183,7 @@ const printBillOnly = () => {
           <h1>Customer Bill (Preview)</h1>
 
           <div class="badge">
-            ${t.id === 'default' ? 'Live Bill' : `Table: ${t.number - 1}`} • ${orderType}
+            ${t.id?.startsWith('live-bill-') ? `Live Bill #${t.id.split('-')[2]}` : `Table: ${t.number - 5}`} • ${orderType}
           </div>
 
           <div class="row">
