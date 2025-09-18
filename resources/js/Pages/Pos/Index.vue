@@ -66,7 +66,7 @@
   </div>
 </div>
 
-    
+
 
       <div class="flex w-full gap-4">
         <!-- Left: Tables + Customer -->
@@ -396,6 +396,27 @@
                   </option>
                 </select>
               </div>
+
+
+                   <div class="flex items-center justify-between border-b border-gray-300 pb-3">
+                    <p class="text-xl font-medium text-gray-800">Custom Discount</p>
+                    <div class="flex items-center gap-2">
+                     <CurrencyInput
+  ref="customDiscountRef"
+  v-model="selectedTable.custom_discount"
+  @blur="validateCustomDiscount"
+ placeholder="Enter value"
+ class="rounded-md px-3 py-1 text-xl text-gray-900 focus:ring-2 focus:ring-blue-500"
+ />
+                      <select
+v-model="selectedTable.custom_discount_type"
+                        class="px-8 py-1 rounded-md text-xl text-gray-900 focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="fixed">Rs</option>
+                        <option value="percent">%</option>
+                      </select>
+                    </div>
+                  </div>
 
               <div class="flex items-center justify-between w-full px-16 pt-4">
                 <p class="text-3xl text-black">Total</p>
@@ -738,8 +759,8 @@
   :allcategories="allcategories"
   :colors="colors"
   :sizes="sizes"
-  :initial-category="preselectedCategoryId"  
-  :simple-mode="true"                      
+  :initial-category="preselectedCategoryId"
+  :simple-mode="true"
   @selected-products="handleSelectedProducts"
 />
 
@@ -881,7 +902,7 @@ const savedTables = JSON.parse(localStorage.getItem("tables")) || [
     products: [],
     balance: 0,
     custom_discount: 0.0,
-    custom_discount_type: "percent",
+    custom_discount_type: "fixed",
     kitchen_note: "",
     order_type: "",
     delivery_charge: "",
@@ -1158,7 +1179,7 @@ const refreshData = async () => {
       cash: 0.0,
       balance: 0.0,
       custom_discount: 0.0,
-      custom_discount_type: "percent",
+       custom_discount_type: "fixed",
       kitchen_note: "",
       order_type: "",
       delivery_charge: "",
@@ -1318,27 +1339,43 @@ const submitOrder = async () => {
   }
 
   try {
-    await axios.post("/pos/submit", {
-      customer: customer.value,
-      products: selectedTable.value.products,
-      employee_id: employee_id.value,
-      paymentMethod: selectedPaymentMethod.value,
-      userId: props.loggedInUser.id,
-      orderId: selectedTable.value.orderId,
-      custom_discount: customDiscCalculated.value,
-      cash: selectedTable.value.cash,
-      bank_name: selectedTable.value.bank_name,
-      card_last4: selectedTable.value.card_last4,
-      kitchen_note: selectedTable.value.kitchen_note,
-      delivery_charge: selectedTable.value.delivery_charge,
-      service_charge: selectedTable.value.service_charge,
-      bank_service_charge: selectedTable.value.bank_service_charge,
-      order_type: selectedTable.value.order_type,
-      total: total.value,
-      owner_id: ownerForm.owner_id || null,
-      owner_discount_value: ownerDiscountValue.value,
-      owner_override_amount: ownerFetch.value.override_amount || 0,
-    });
+
+await axios.post("/pos/submit", {
+  customer: customer.value,
+  products: selectedTable.value.products,
+  employee_id: employee_id.value,
+  paymentMethod: selectedPaymentMethod.value,
+  userId: props.loggedInUser.id,
+  orderId: selectedTable.value.orderId,
+
+  custom_discount: Number(selectedTable.value.custom_discount || 0),
+  custom_discount_type: selectedTable.value.custom_discount_type || "fixed",
+  custom_discount_value: Number(customDiscCalculated.value || 0), // optional but recommended
+
+  cash: selectedTable.value.cash,
+  bank_name: selectedTable.value.bank_name,
+  card_last4: selectedTable.value.card_last4,
+  kitchen_note: selectedTable.value.kitchen_note,
+  delivery_charge: selectedTable.value.delivery_charge,
+  service_charge: selectedTable.value.service_charge,
+  bank_service_charge: selectedTable.value.bank_service_charge,
+  order_type: selectedTable.value.order_type,
+  total: total.value,
+  owner_id: ownerForm.owner_id || null,
+  owner_discount_value: ownerDiscountValue.value,
+  owner_override_amount: ownerFetch.value.override_amount || 0,
+});
+
+
+
+
+
+
+
+
+
+
+
 
     isSuccessModalOpen.value = true;
     selectedTable.value.orderId = generateOrderId();
@@ -1381,10 +1418,19 @@ const totalDiscount = computed(() => {
   return (productDiscount + couponDiscount + ownerDisc).toFixed(2);
 });
 
+
+const validateCustomDiscount = () => {
+  if (!selectedTable.value) return;
+  const n = Number(selectedTable.value.custom_discount);
+  if (isNaN(n) || n < 0) selectedTable.value.custom_discount = 0;
+};
+
+
 const total = computed(() => {
   const subtotalValue = parseFloat(subtotal.value) || 0;
   const discountValue = parseFloat(totalDiscount.value) || 0;
   const customDiscount = parseFloat(selectedTable.value.custom_discount) || 0;
+
 
   let customValue = 0;
   if (selectedTable.value.custom_discount_type === "percent") {
@@ -1412,16 +1458,15 @@ const total = computed(() => {
 const customDiscCalculated = computed(() => {
   const subtotalValue = parseFloat(subtotal.value) || 0;
   const customDiscount = parseFloat(selectedTable.value.custom_discount) || 0;
-
-  let customValue = 0;
-  if (selectedTable.value.custom_discount_type === "percent") {
-    customValue = (subtotalValue * customDiscount) / 100;
-  } else if (selectedTable.value.custom_discount_type === "fixed") {
-    customValue = customDiscount;
-  }
-
-  return customValue.toFixed(2);
+  return (
+    selectedTable.value.custom_discount_type === "percent"
+      ? (subtotalValue * customDiscount) / 100
+      : customDiscount
+  ).toFixed(2);
 });
+
+
+
 
 const balance = computed(() => {
   if (!selectedTable.value) return 0;

@@ -20,6 +20,7 @@ class Sale extends Model
         'sale_date',
         'total_cost',
         'custom_discount',
+        'custom_discount_type',
         'kitchen_note',
         'delivery_charge',
         'service_charge',
