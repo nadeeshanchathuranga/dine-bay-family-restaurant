@@ -110,10 +110,41 @@
               </div>
             </div>
 
-            <!-- exactly 25 tables (5 x 5) -->
+            <!-- VIP tables (5 tables) -->
+            <div class="grid grid-cols-5 gap-3 mb-3">
+              <div
+                v-for="vipTable in tables.slice(5, 10)"
+                :key="vipTable.id"
+                :class="[
+                  'w-full flex flex-col justify-center items-center rounded-xl px-2 py-4 border border-[#DC2626] text-center',
+                  (selectedTable && vipTable.id === selectedTable.id) ? 'bg-red-100'
+                    : (vipTable.products && vipTable.products.length > 0 ? 'bg-yellow-100' : ''),
+                  'hover:bg-red-50',
+                ]"
+                @click="selectTable(vipTable)"
+              >
+                <div class="text-lg text-black font-bold">VIP</div>
+                <div class="text-4xl text-black font-bold">
+                  {{ vipTable.id.split('-')[1] }}
+                </div>
+
+                <button
+                  @click.stop="sendKOT(vipTable)"
+                  :disabled="isKOTDisabled(vipTable)"
+                  :class="[
+                    'mt-2 px-3 py-1 tracking-wide text-white text-sm font-semibold rounded-lg',
+                    isKOTDisabled(vipTable) ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
+                  ]"
+                >
+                  {{ vipTable.kotStatus === 'sent' ? 'KOT Sent' : 'KOT' }}
+                </button>
+              </div>
+            </div>
+
+            <!-- exactly 20 tables (4 x 5) -->
             <div class="grid grid-cols-5 gap-3">
               <div
-                v-for="table in tables.slice(5, 30)"
+                v-for="table in tables.slice(10, 30)"
                 :key="table.id"
                 :class="[
                   'w-full flex flex-col justify-center items-center rounded-xl px-2 py-4 border border-[#2563EB] text-center',
@@ -125,7 +156,7 @@
               >
                 <div class="text-lg text-black font-bold">Table</div>
                 <div class="text-4xl text-black font-bold">
-                  {{ table.number - 5 }}
+                  {{ table.number - 10 }}
                 </div>
 
                 <button
@@ -256,7 +287,9 @@
                 {{
                   selectedTable?.id?.startsWith('live-bill-')
                     ? `Live Bill #${selectedTable.id.split('-')[2]}`
-                    : `Table ${selectedTable?.number - 5}`
+                    : selectedTable?.id?.startsWith('vip-')
+                    ? `VIP ${selectedTable.id.split('-')[1]}`
+                    : `Table ${selectedTable?.number - 10}`
                 }}
               </h2>
 
@@ -922,11 +955,13 @@ const savedSelectedTable = JSON.parse(localStorage.getItem("selectedTable")) || 
 // Add validation function to ensure table integrity
 const validateTableIntegrity = () => {
   const liveBills = tables.value.filter(t => t.id.startsWith('live-bill-'));
-  const regularTables = tables.value.filter(t => !t.id.startsWith('live-bill-'));
+  const vipTables = tables.value.filter(t => t.id.startsWith('vip-'));
+  const regularTables = tables.value.filter(t => !t.id.startsWith('live-bill-') && !t.id.startsWith('vip-'));
 
   console.log("Table integrity check:");
   console.log("Live Bills count:", liveBills.length, "Expected: 5");
-  console.log("Regular tables count:", regularTables.length, "Expected: 25");
+  console.log("VIP Tables count:", vipTables.length, "Expected: 5");
+  console.log("Regular tables count:", regularTables.length, "Expected: 20");
 
   // Check for duplicate IDs
   const allIds = tables.value.map(t => t.id);
@@ -988,24 +1023,58 @@ const seedFixedTables = () => {
     }
   }
 
-  // Map existing non-live-bill tables by number
-  const byNum = new Map();
-  tables.value.filter(t => !t.id.startsWith("live-bill-")).forEach(t => byNum.set(t.number, t));
+  // Map existing non-live-bill and non-vip tables by ID
+  const byId = new Map();
+  tables.value.filter(t => !t.id.startsWith("live-bill-") && !t.id.startsWith("vip-")).forEach(t => byId.set(t.id, t));
 
   const stable = [...liveBills];
 
-  // Create tables 1-25 (using internal numbers 6-30)
-  for (let n = 6; n <= 30; n++) {
-    if (byNum.has(n)) {
-      const t = byNum.get(n);
+  // Create 5 VIP tables (vip-1 through vip-5)
+  const vipTables = [];
+  for (let i = 1; i <= 5; i++) {
+    const existingVip = tables.value.find(t => t.id === `vip-${i}`);
+    if (existingVip) {
+      if (!('kotStatus' in existingVip)) existingVip.kotStatus = "pending";
+      if (!('lastKotSnapshot' in existingVip)) existingVip.lastKotSnapshot = null;
+      vipTables.push(existingVip);
+      console.log(`Restored existing VIP table ${i}:`, existingVip.id);
+    } else {
+      const newVipTable = {
+        id: `vip-${i}`,
+        number: i + 5, // VIP tables use numbers 6-10
+        orderId: generateOrderId(),
+        products: [],
+        cash: 0.0,
+        balance: 0.0,
+        custom_discount: 0.0,
+        custom_discount_type: "percent",
+        kitchen_note: "",
+        order_type: "",
+        delivery_charge: "",
+        service_charge: "",
+        bank_service_charge: "",
+        kotStatus: "pending",
+        lastKotSnapshot: null,
+      };
+      vipTables.push(newVipTable);
+      console.log(`Created new VIP table ${i}:`, newVipTable.id);
+    }
+  }
+  stable.push(...vipTables);
+
+  // Create regular tables 1-20 (using internal numbers 11-30)
+  for (let n = 11; n <= 30; n++) {
+    const tableId = `t${n}`;
+    if (byId.has(tableId)) {
+      const t = byId.get(tableId);
       if (!('kotStatus' in t)) t.kotStatus = "pending";
       if (!('lastKotSnapshot' in t)) t.lastKotSnapshot = null;
       stable.push(t);
-      console.log(`Restored existing Table ${n}:`, t.id, `(display: ${n-5})`);
+      console.log(`Restored existing Table ${n}:`, t.id, `(display: ${n-10})`);
     } else {
       const newTable = {
-        id: `t${n}`,
-        number: n,             // displays as n-5 => 1..25
+        id: tableId,
+        number: n,             // displays as n-10 => 1..20
         orderId: generateOrderId(),
         products: [],
         cash: 0.0,
@@ -1021,14 +1090,15 @@ const seedFixedTables = () => {
         lastKotSnapshot: null,
       };
       stable.push(newTable);
-      console.log(`Created new Table ${n}:`, newTable.id, `(display: ${n-5})`);
+      console.log(`Created new Table ${n}:`, newTable.id, `(display: ${n-10})`);
     }
   }
   tables.value = stable;
 
   console.log("Total tables created:", tables.value.length);
   console.log("Live Bills:", tables.value.filter(t => t.id.startsWith('live-bill-')).map(t => t.id));
-  console.log("Regular Tables:", tables.value.filter(t => !t.id.startsWith('live-bill-')).map(t => `${t.id}(${t.number-5})`));
+  console.log("VIP Tables:", tables.value.filter(t => t.id.startsWith('vip-')).map(t => t.id));
+  console.log("Regular Tables:", tables.value.filter(t => !t.id.startsWith('live-bill-') && !t.id.startsWith('vip-')).map(t => `${t.id}(${t.number-10})`));
 
   // Ensure a valid selection - default to first Live Bill
   if (!selectedTable.value || !tables.value.find(t => t.id === selectedTable.value.id)) {
