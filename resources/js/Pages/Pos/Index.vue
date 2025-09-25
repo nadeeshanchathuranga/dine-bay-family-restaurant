@@ -838,6 +838,8 @@ import SelectProductModel from "@/Components/custom/SelectProductModel.vue";
 import ProductAutoComplete from "@/Components/custom/ProductAutoComplete.vue";
 import { generateOrderId } from "@/Utils/Other.js";
 import { Combobox, ComboboxInput, ComboboxOptions, ComboboxOption } from "@headlessui/vue";
+import jsPDF from "jspdf";
+import "jspdf-autotable";
 
 /* =========================
    PROPS (declare FIRST)
@@ -1884,9 +1886,184 @@ const isKOTDisabled = (table) => {
 };
 
 /* =========================
-   TABLE KOT PRINT (UPDATED with daily sequence + note on top)
+   PRODUCTION-FRIENDLY KOT PRINTING
 ========================= */
-const sendKOT = (table) => {
+
+// Method 1: Hidden iframe printing (most compatible)
+const printKOTWithIframe = (receiptHTML) => {
+  return new Promise((resolve, reject) => {
+    try {
+      // Remove any existing print iframe
+      const existingFrame = document.getElementById('kotPrintFrame');
+      if (existingFrame) {
+        existingFrame.remove();
+      }
+
+      // Create hidden iframe
+      const iframe = document.createElement('iframe');
+      iframe.id = 'kotPrintFrame';
+      iframe.style.position = 'absolute';
+      iframe.style.left = '-9999px';
+      iframe.style.top = '-9999px';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = 'none';
+      
+      document.body.appendChild(iframe);
+      
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+      iframeDoc.open();
+      iframeDoc.write(receiptHTML);
+      iframeDoc.close();
+      
+      // Wait for content to load, then print
+      iframe.onload = () => {
+        try {
+          iframe.contentWindow.focus();
+          iframe.contentWindow.print();
+          
+          // Clean up after a delay
+          setTimeout(() => {
+            document.body.removeChild(iframe);
+            resolve(true);
+          }, 1000);
+        } catch (err) {
+          console.error('Iframe print error:', err);
+          document.body.removeChild(iframe);
+          reject(err);
+        }
+      };
+      
+      iframe.onerror = (err) => {
+        console.error('Iframe load error:', err);
+        document.body.removeChild(iframe);
+        reject(err);
+      };
+      
+    } catch (err) {
+      console.error('Iframe creation error:', err);
+      reject(err);
+    }
+  });
+};
+
+// Method 2: Direct DOM printing
+const printKOTWithDOM = (receiptHTML) => {
+  return new Promise((resolve, reject) => {
+    try {
+      // Create temporary print area
+      const printArea = document.createElement('div');
+      printArea.id = 'kotPrintArea';
+      printArea.innerHTML = receiptHTML;
+      printArea.style.position = 'absolute';
+      printArea.style.left = '-9999px';
+      printArea.style.top = '-9999px';
+      
+      document.body.appendChild(printArea);
+      
+      // Store original content
+      const originalContent = document.body.innerHTML;
+      
+      // Replace body with print content
+      document.body.innerHTML = receiptHTML;
+      
+      // Print
+      window.print();
+      
+      // Restore original content
+      document.body.innerHTML = originalContent;
+      
+      resolve(true);
+    } catch (err) {
+      console.error('DOM print error:', err);
+      reject(err);
+    }
+  });
+};
+
+// Method 3: PDF fallback using jsPDF
+const printKOTWithPDF = (table, deltas, kotNo, dateStr, timeStr) => {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: [80, 200] // 80mm width thermal printer
+      });
+      
+      // Set font
+      doc.setFontSize(12);
+      
+      // Header
+      doc.setFontSize(16);
+      doc.text(`KOT Note - ${String(kotNo).padStart(3,'0')}`, 40, 15, { align: 'center' });
+      
+      // Table/Live Bill display
+      const tableDisplay = table.id?.startsWith('live-bill-')
+        ? `Live Bill #${table.id.split('-')[2]}`
+        : `Table ${table.number - 5}`;
+      
+      const orderType = table.order_type === "takeaway" ? "Takeaway" 
+        : table.order_type === "pickup" ? "Delivery" : "Dine In";
+      
+      doc.setFontSize(10);
+      let yPos = 25;
+      doc.text(`Date: ${dateStr}`, 5, yPos);
+      doc.text(`Time: ${timeStr}`, 5, yPos + 5);
+      doc.text(`Order: ${table.orderId}`, 5, yPos + 10);
+      doc.text(`${tableDisplay}`, 5, yPos + 15);
+      doc.text(`Type: ${orderType}`, 5, yPos + 20);
+      
+      yPos += 30;
+      
+      // Kitchen note
+      if (table.kitchen_note) {
+        doc.setFontSize(9);
+        doc.text(`Kitchen Note: ${table.kitchen_note}`, 5, yPos);
+        yPos += 10;
+      }
+      
+      // Products table
+      const tableData = deltas.map(d => [d.name, d.delta.toString()]);
+      
+      doc.autoTable({
+        startY: yPos,
+        head: [['Product', 'Qty']],
+        body: tableData,
+        theme: 'plain',
+        styles: { fontSize: 9, cellPadding: 2 },
+        columnStyles: { 
+          0: { cellWidth: 50 }, 
+          1: { cellWidth: 20, halign: 'center' } 
+        },
+        margin: { left: 5, right: 5 }
+      });
+      
+      // Auto-print PDF
+      doc.autoPrint();
+      
+      // Open in new tab for printing
+      const pdfUrl = doc.output('bloburl');
+      const newTab = window.open(pdfUrl, '_blank');
+      
+      if (newTab) {
+        resolve(true);
+      } else {
+        // If popup blocked, try to download
+        doc.save(`KOT-${kotNo}-${table.orderId}.pdf`);
+        resolve(true);
+      }
+    } catch (err) {
+      console.error('PDF generation error:', err);
+      reject(err);
+    }
+  });
+};
+
+/* =========================
+   ENHANCED KOT PRINT FUNCTION
+========================= */
+const sendKOT = async (table) => {
   try {
     if (!table) {
       isAlertModalOpen.value = true;
@@ -1936,177 +2113,177 @@ const sendKOT = (table) => {
     // Display table or Live Bill number appropriately
     const tableDisplay = table.id?.startsWith('live-bill-')
       ? `Live Bill #${table.id.split('-')[2]}`
-      : `Table ${table.number - 5}`;
+      : table.id?.startsWith('vip-')
+      ? `VIP ${table.id.split('-')[1]}`
+      : `Table ${table.number - 10}`;
 
     const receiptHTML = `
-      <!doctype html>            <!doctype html> <html>
-  <head>
-    <meta charset="utf-8" />
-    <title>KOT</title>
-    <style>
-      /* ---------- PRINT ---------- */
-      @media print {
-        body {
-          margin: 0;
-          padding: 0;
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
+      <!doctype html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>KOT</title>
+        <style>
+          @media print {
+            body {
+              margin: 0;
+              padding: 0;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            @page {
+              size: 80mm auto;
+              margin: 0;
+            }
+          }
+          body {
+            background: #fff;
+            font-size: 12px;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 10px;
+            color: #000;
+          }
+          h1 {
+            text-align: center;
+            margin: 0 0 10px 0;
+            font-size: 18px;
+          }
+          .row {
+            display: flex;
+            justify-content: space-between;
+            margin: 6px 0;
+            font-size: 12px;
+          }
+          .badge {
+            border: 1px solid #000;
+            padding: 3px 5px;
+            text-align: center;
+            margin: 6px 0;
+            font-weight: bold;
+            font-size: 11px;
+          }
+          .kot-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+            font-size: 12px;
+          }
+          .kot-head .cell {
+            padding: 4px 6px;
+          }
+          .note {
+            border: 1px dashed #000;
+            padding: 8px;
+            margin: 10px 0;
+            font-weight: bold;
+            font-size: 12px;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 8px;
+            font-size: 12px;
+          }
+          thead th {
+            text-align: left;
+            padding: 6px 8px;
+            font-size: 12px;
+            border-bottom: 2px solid #000;
+          }
+          thead th:last-child {
+            text-align: center;
+            width: 40px;
+          }
+          tbody {
+            display: table-row-group;
+            background: #fff;
+            font-size: 12px;
+          }
+          tbody tr {
+            border-bottom: 1px dashed #000;
+          }
+          tbody td {
+            padding: 6px 8px;
+            font-size: 13px;
+            vertical-align: top;
+          }
+          tbody td:first-child {
+            text-align: left;
+          }
+          tbody td:last-child {
+            text-align: center;
+          }
+        </style>
+      </head>
+      <body>
+        <h1>KOT Note - (${String(kotNo).padStart(3,'0')})</h1>
+        <div class="kot-head">
+          <div class="cell"><b>Date:</b> ${dateStr}</div>
+          <div class="cell"><b>Time:</b> ${timeStr}</div>
+          <div class="cell"><b>Order:</b> ${table.orderId}</div>
+          <div class="cell"><b>${tableDisplay}</b></div>
+          <div class="cell"><b>Type:</b> ${orderType}</div>
+        </div>
+        ${noteBlock}
+        <table>
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th style="text-align:center;">Qty</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${productRows}
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+
+    // Try multiple printing methods in order of preference
+    let printSuccess = false;
+    
+    try {
+      // Method 1: Try iframe printing first
+      await printKOTWithIframe(receiptHTML);
+      printSuccess = true;
+    } catch (err) {
+      console.warn('Iframe printing failed, trying DOM printing:', err.message);
+      
+      try {
+        // Method 2: Try direct DOM printing
+        await printKOTWithDOM(receiptHTML);
+        printSuccess = true;
+      } catch (err2) {
+        console.warn('DOM printing failed, trying PDF fallback:', err2.message);
+        
+        try {
+          // Method 3: PDF fallback
+          await printKOTWithPDF(table, deltas, kotNo, dateStr, timeStr);
+          printSuccess = true;
+        } catch (err3) {
+          console.error('All printing methods failed:', err3.message);
+          throw new Error('All printing methods failed');
         }
-        @page {
-          size: 80mm auto;
-          margin: 0;
-        }
       }
-
-      /* ---------- GLOBAL ---------- */
-      body {
-        background: #fff;
-        font-size: 12px;
-        font-family: Arial, sans-serif;
-        margin: 0;
-        padding: 10px;
-        color: #000;
-      }
-
-      h1 {
-        text-align: center;
-        margin: 0 0 10px 0;
-        font-size: 18px;
-      }
-
-      .row {
-        display: flex;
-        justify-content: space-between;
-        margin: 6px 0;
-        font-size: 12px;
-      }
-
-      .badge {
-        border: 1px solid #000;
-        padding: 3px 5px;
-        text-align: center;
-        margin: 6px 0;
-        font-weight: bold;
-        font-size: 11px;
-      }
-
-      .kot-head {
-        display: flex;
-        justify-content: space-between;
-        gap: 8px;
-        flex-wrap: wrap;
-        margin-bottom: 10px;
-        font-size: 12px;
-      }
-
-      .kot-head .cell {
-        padding: 4px 6px;
-      }
-
-      .note {
-        border: 1px dashed #000;
-        padding: 8px;
-        margin: 10px 0;
-        font-weight: bold;
-        font-size: 12px;
-      }
-
-      /* ---------- TABLE ---------- */
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 8px;
-        font-size: 12px;
-      }
-
-      thead th {
-        text-align: left;
-        padding: 6px 8px;
-        font-size: 12px;
-        border-bottom: 2px solid #000;
-      }
-
-      thead th:last-child {
-        text-align: center;
-        width: 40px;
-      }
-
-      /* ✅ tbody styling */
-      tbody {
-        display: table-row-group;
-        background: #fff;
-        font-size: 12px; /* consistent body font */
-      }
-
-      tbody tr {
-        border-bottom: 1px dashed #000;
-      }
-
-      tbody td {
-        padding: 6px 8px;
-        font-size: 13px;
-        vertical-align: top;
-      }
-
-      tbody td:first-child {
-        text-align: left;
-      }
-
-      tbody td:last-child {
-        text-align: center;
-      }
-    </style>
-  </head>
-  <body>
-    <h1>KOT Note - (${String(kotNo).padStart(3,'0')})</h1>
-
-    <div class="kot-head">
-      <div class="cell"><b>Date:</b> ${dateStr}</div>
-      <div class="cell"><b>Time:</b> ${timeStr}</div>
-      <div class="cell"><b>Order:</b> ${table.orderId}</div>
-      <div class="cell"><b>${tableDisplay}</b></div>
-      <div class="cell"><b>Type:</b> ${orderType}</div>
-    </div>
-
-    ${noteBlock}
-
-    <table>
-      <thead>
-        <tr>
-          <th>Product</th>
-          <th style="text-align:center;">Qty</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${productRows}
-      </tbody>
-    </table>
-  </body>
-</html>
-     `;
-
-    const w = window.open("", "_blank");
-    if (!w) {
-      isAlertModalOpen.value = true;
-      message.value = "Popup blocked. Allow popups to print KOT.";
-      return;
     }
-    w.document.open();
-    w.document.write(receiptHTML);
-    w.document.close();
-    w.onload = () => {
-      w.focus();
-      w.print();
-      w.close();
-
-      // mark as sent AFTER print + save snapshot
+    
+    if (printSuccess) {
+      // Mark as sent AFTER successful print + save snapshot
       table.kotStatus = "sent";
       table.lastKotSnapshot = getKotSnapshot(table);
       localStorage.setItem("tables", JSON.stringify(tables.value));
-    };
+      
+      isAlertModalOpen.value = true;
+      message.value = "KOT sent to kitchen successfully!";
+    }
+
   } catch (err) {
     isAlertModalOpen.value = true;
-    message.value = "Failed to print KOT.";
+    message.value = "Failed to print KOT. Please try again or contact support.";
     console.error("KOT print error:", err?.message || err);
   }
 };
