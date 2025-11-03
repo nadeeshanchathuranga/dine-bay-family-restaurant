@@ -72,5 +72,30 @@ class Sale extends Model
         return $this->belongsTo(User::class, 'user_id', 'id');
     }
 
+    /**
+     * Check if an order ID already exists
+     *
+     * @param string $orderId
+     * @return bool
+     */
+    public static function orderIdExists($orderId)
+    {
+        return self::where('order_id', $orderId)->exists();
+    }
+
+    /**
+     * Boot method to add model events
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        // Add validation before creating a sale
+        static::creating(function ($sale) {
+            if (self::orderIdExists($sale->order_id)) {
+                throw new \Exception("Order ID {$sale->order_id} already exists. Cannot create duplicate order.");
+            }
+        });
+    }
 
 }

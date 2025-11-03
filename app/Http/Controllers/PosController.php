@@ -160,6 +160,18 @@ class PosController extends Controller
         if (!Gate::allows('hasRole', ['Admin', 'Cashier'])) {
             abort(403, 'Unauthorized');
         }
+        
+        // Validate that order_id is unique
+        $request->validate([
+            'orderId' => 'required|string|unique:sales,order_id',
+            'products' => 'required|array',
+            'products.*.id' => 'required',
+            'products.*.quantity' => 'required|numeric|min:1',
+        ], [
+            'orderId.unique' => 'This order ID already exists. Please generate a new order ID.',
+            'orderId.required' => 'Order ID is required.',
+        ]);
+        
         // Combine countryCode and contactNumber to create the phone field
 
 
@@ -223,6 +235,14 @@ class PosController extends Controller
                         'loyalty_points' => 0, // Default value
                     ]);
                 }
+            }
+
+            // Double-check that order_id doesn't exist (extra safety layer)
+            if (Sale::orderIdExists($request->input('orderId'))) {
+                DB::rollBack();
+                return response()->json([
+                    'message' => 'This order ID already exists. Please refresh and try again.',
+                ], 409); // 409 Conflict
             }
 
             // Create the sale record
